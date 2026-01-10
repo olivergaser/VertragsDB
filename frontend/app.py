@@ -124,13 +124,13 @@ def render_edit_contract(contract):
             if response.status_code == 200:
                 st.success("✅ Änderungen gespeichert!")
                 st.session_state.editing_contract = None # Zurück zur Übersicht
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error(f"❌ Fehler: {response.text}")
     
     if st.button("Zurück zur Übersicht"):
         st.session_state.editing_contract = None
-        st.experimental_rerun()
+        st.rerun()
 
 def render_overview():
     st.header("📋 Vertragsübersicht")
@@ -157,7 +157,7 @@ def render_overview():
                 with col3:
                     if st.button("Bearbeiten", key=f"edit_{contract['id']}"):
                         st.session_state.editing_contract = contract
-                        st.experimental_rerun()
+                        st.rerun()
                 st.markdown("---")
     else:
         st.error("Fehler beim Laden der Verträge.")

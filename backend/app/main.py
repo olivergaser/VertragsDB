@@ -60,11 +60,18 @@ async def create_contract(
     file: UploadFile = File(None),
     db: Session = Depends(get_db)
 ):
+    # Parse date strings to date objects
+    try:
+        parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
     # Manuell ein ContractCreate-Objekt erstellen
     contract_data = ContractCreate(
         partner=partner,
-        start_date=start_date,
-        end_date=end_date,
+        start_date=parsed_start_date,
+        end_date=parsed_end_date,
         notice_period=notice_period,
         amount=amount,
         category=category,
@@ -124,9 +131,16 @@ async def update_contract(
     if not contract:
         raise HTTPException(status_code=404, detail="Contract not found")
 
+    # Parse date strings to date objects
+    try:
+        parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
     contract.partner = partner
-    contract.start_date = start_date
-    contract.end_date = end_date
+    contract.start_date = parsed_start_date
+    contract.end_date = parsed_end_date
     contract.notice_period = notice_period
     contract.amount = amount
     contract.category = category
