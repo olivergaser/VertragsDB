@@ -5,6 +5,7 @@ import os
 import time
 from requests.exceptions import ConnectionError
 from loguru import logger
+import plotly.graph_objects as go
 
 # Backend-URL aus Umgebungsvariable (wird von Docker gesetzt)
 BACKEND_URL = os.getenv("BACKEND_URL", "http://0.0.0.0:8000")
@@ -30,10 +31,13 @@ if not wait_for_backend():
 
 if "editing_contract" not in st.session_state:
     st.session_state.editing_contract = None
+if "editing_budget" not in st.session_state:
+    st.session_state.editing_budget = None
 
 def render_create_contract():
     st.header("➕ Neuen Vertrag erfassen")
     with st.form("new_contract"):
+        contract_number = st.text_input("Vertragsnummer", placeholder="z. B. 'V-2026-001'")
         partner = st.text_input("Vertragspartner", placeholder="z. B. 'Max Mustermann GmbH'")
         col1, col2 = st.columns(2)
         with col1:
@@ -59,6 +63,7 @@ def render_create_contract():
                 st.error("Bitte fülle alle Pflichtfelder aus!")
             else:
                 data = {
+                    "contract_number": contract_number,
                     "partner": partner,
                     "start_date": start_date.strftime("%Y-%m-%d"),
                     "end_date": end_date.strftime("%Y-%m-%d"),
@@ -86,6 +91,7 @@ def render_edit_contract(contract):
         end_date_val = datetime.now().date()
 
     with st.form("edit_contract"):
+        contract_number = st.text_input("Vertragsnummer", value=contract.get("contract_number", "") or "")
         partner = st.text_input("Vertragspartner", value=contract['partner'])
         col1, col2 = st.columns(2)
         with col1:
@@ -112,6 +118,7 @@ def render_edit_contract(contract):
         submitted = st.form_submit_button("Änderungen speichern")
         if submitted:
             data = {
+                "contract_number": contract_number,
                 "partner": partner,
                 "start_date": start_date.strftime("%Y-%m-%d"),
                 "end_date": end_date.strftime("%Y-%m-%d"),
@@ -129,9 +136,20 @@ def render_edit_contract(contract):
             else:
                 st.error(f"❌ Fehler: {response.text}")
     
-    if st.button("Zurück zur Übersicht"):
-        st.session_state.editing_contract = None
-        st.rerun()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Zurück zur Übersicht"):
+            st.session_state.editing_contract = None
+            st.rerun()
+    with col2:
+        if st.button("🗑️ Vertrag löschen", type="primary"):
+            response = requests.delete(f"{BACKEND_URL}/contracts/{contract['id']}")
+            if response.status_code == 200:
+                st.success("✅ Vertrag gelöscht!")
+                st.session_state.editing_contract = None
+                st.rerun()
+            else:
+                st.error(f"❌ Fehler: {response.text}")
 
 def render_overview():
     st.header("📋 Vertragsübersicht")
@@ -147,7 +165,7 @@ def render_overview():
             st.info("Keine Verträge vorhanden.")
         else:
             for contract in contracts:
-                col1, col2, col3 = st.columns([3, 2, 1])
+                col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
                 with col1:
                     st.write(f"**{contract['partner']}** ({contract['category']})")
                 with col2:
@@ -156,22 +174,293 @@ def render_overview():
                     end = datetime.strptime(contract['end_date'], "%Y-%m-%d").strftime("%d.%m.%Y")
                     st.write(f"{start} - {end}")
                 with col3:
-                    if st.button("Bearbeiten", key=f"edit_{contract['id']}"):
+                    if st.button("✏️ Bearbeiten", key=f"edit_{contract['id']}"):
                         st.session_state.editing_contract = contract
                         st.rerun()
+                with col4:
+                    if st.button("🗑️ Löschen", key=f"delete_{contract['id']}", type="secondary"):
+                        response = requests.delete(f"{BACKEND_URL}/contracts/{contract['id']}")
+                        if response.status_code == 200:
+                            st.success("✅ Vertrag gelöscht!")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Fehler: {response.text}")
                 st.markdown("---")
     else:
         st.error("Fehler beim Laden der Verträge.")
 
+def render_create_budget():
+    st.header("➕ Neues Budget erstellen")
+    with st.form("new_budget"):
+        contract_number = st.text_input("Vertragsnummer (optional)", placeholder="z. B. 'V-2026-001'")
+        initial_amount = st.number_input("Ausgangswert (€)", min_value=0.0, value=0.0, step=100.0)
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input("Beginn", datetime.now().date(), format="DD.MM.YYYY")
+        with col2:
+            end_date = st.date_input("Ende", datetime.now().date(), format="DD.MM.YYYY")
+        
+        submitted = st.form_submit_button("Budget erstellen")
+        if submitted:
+            if not initial_amount or not start_date or not end_date:
+                st.error("Bitte fülle alle Pflichtfelder aus!")
+            else:
+                data = {
+                    "contract_number": contract_number if contract_number else None,
+                    "initial_amount": initial_amount,
+                    "start_date": start_date.strftime("%Y-%m-%d"),
+                    "end_date": end_date.strftime("%Y-%m-%d"),
+                }
+                response = requests.post(f"{BACKEND_URL}/budgets/", json=data)
+                if response.status_code == 200:
+                    st.success("✅ Budget erfolgreich erstellt!")
+                    st.rerun()
+                else:
+                    st.error(f"❌ Fehler: {response.text}")
+
+def render_edit_budget(budget):
+    st.header("✏️ Budget bearbeiten")
+    
+    # Datum parsen
+    try:
+        start_date_val = datetime.strptime(budget['start_date'], "%Y-%m-%d").date()
+        end_date_val = datetime.strptime(budget['end_date'], "%Y-%m-%d").date()
+    except:
+        start_date_val = datetime.now().date()
+        end_date_val = datetime.now().date()
+    
+    with st.form("edit_budget"):
+        contract_number = st.text_input("Vertragsnummer (optional)", value=budget.get('contract_number', '') or '')
+        initial_amount = st.number_input("Ausgangswert (€)", min_value=0.0, value=float(budget['initial_amount']), step=100.0)
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input("Beginn", value=start_date_val, format="DD.MM.YYYY")
+        with col2:
+            end_date = st.date_input("Ende", value=end_date_val, format="DD.MM.YYYY")
+        
+        submitted = st.form_submit_button("Änderungen speichern")
+        if submitted:
+            data = {
+                "contract_number": contract_number if contract_number else None,
+                "initial_amount": initial_amount,
+                "start_date": start_date.strftime("%Y-%m-%d"),
+                "end_date": end_date.strftime("%Y-%m-%d"),
+            }
+            response = requests.put(f"{BACKEND_URL}/budgets/{budget['id']}", json=data)
+            if response.status_code == 200:
+                st.success("✅ Änderungen gespeichert!")
+                # Budget neu laden
+                budget_response = requests.get(f"{BACKEND_URL}/budgets/{budget['id']}")
+                if budget_response.status_code == 200:
+                    st.session_state.editing_budget = budget_response.json()
+                    st.rerun()
+            else:
+                st.error(f"❌ Fehler: {response.text}")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Zurück zu Details"):
+            # Budget neu laden
+            budget_response = requests.get(f"{BACKEND_URL}/budgets/{budget['id']}")
+            if budget_response.status_code == 200:
+                st.session_state.editing_budget = budget_response.json()
+                st.rerun()
+    with col2:
+        if st.button("🗑️ Budget löschen", type="primary"):
+            response = requests.delete(f"{BACKEND_URL}/budgets/{budget['id']}")
+            if response.status_code == 200:
+                st.success("✅ Budget gelöscht!")
+                st.session_state.editing_budget = None
+                st.rerun()
+            else:
+                st.error(f"❌ Fehler: {response.text}")
+
+def render_budget_detail(budget, edit_mode=False):
+    if edit_mode:
+        render_edit_budget(budget)
+        return
+    
+    st.header(f"💰 Budget-Details")
+    
+    # Budget-Informationen
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Ausgangswert", f"{budget['initial_amount']:.2f} €")
+    with col2:
+        start = datetime.strptime(budget['start_date'], "%Y-%m-%d").strftime("%d.%m.%Y")
+        end = datetime.strptime(budget['end_date'], "%Y-%m-%d").strftime("%d.%m.%Y")
+        st.write(f"**Zeitraum:** {start} - {end}")
+    with col3:
+        if budget.get('contract_number'):
+            st.write(f"**Vertragsnummer:** {budget['contract_number']}")
+    
+    st.markdown("---")
+    
+    # Berechne verbrauchtes und verbleibendes Budget
+    expenses = budget.get('expenses', [])
+    total_spent = sum(exp['amount'] for exp in expenses)
+    remaining = budget['initial_amount'] - total_spent
+    
+    # Tortengrafik
+    st.subheader("📊 Budget-Übersicht")
+    
+    if total_spent > 0:
+        fig = go.Figure(data=[go.Pie(
+            labels=['Verbraucht', 'Verfügbar'],
+            values=[total_spent, max(0, remaining)],
+            hole=.4,
+            marker_colors=['#ff6b6b', '#51cf66']
+        )])
+        fig.update_layout(
+            title_text=f"Budget-Status: {remaining:.2f} € verfügbar",
+            showlegend=True
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Noch keine Ausgaben erfasst.")
+    
+    # Metriken
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Verbraucht", f"{total_spent:.2f} €")
+    with col2:
+        st.metric("Verfügbar", f"{remaining:.2f} €")
+    with col3:
+        percentage = (total_spent / budget['initial_amount'] * 100) if budget['initial_amount'] > 0 else 0
+        st.metric("Verbraucht %", f"{percentage:.1f}%")
+    
+    st.markdown("---")
+    
+    # Ausgaben erfassen
+    st.subheader("➕ Neue Ausgabe erfassen")
+    with st.form("new_expense"):
+        col1, col2 = st.columns(2)
+        with col1:
+            expense_amount = st.number_input("Betrag (€)", min_value=0.0, value=0.0, step=10.0)
+        with col2:
+            expense_date = st.date_input("Datum", datetime.now().date(), format="DD.MM.YYYY")
+        description = st.text_input("Beschreibung", placeholder="z. B. 'Rechnung #123'")
+        
+        submitted = st.form_submit_button("Ausgabe hinzufügen")
+        if submitted:
+            if expense_amount <= 0:
+                st.error("Betrag muss größer als 0 sein!")
+            else:
+                data = {
+                    "budget_id": budget['id'],
+                    "amount": expense_amount,
+                    "date": expense_date.strftime("%Y-%m-%d"),
+                    "description": description if description else None,
+                }
+                response = requests.post(f"{BACKEND_URL}/expenses/", json=data)
+                if response.status_code == 200:
+                    st.success("✅ Ausgabe erfolgreich erfasst!")
+                    st.rerun()
+                else:
+                    st.error(f"❌ Fehler: {response.text}")
+    
+    # Ausgaben-Liste
+    if expenses:
+        st.subheader("📋 Erfasste Ausgaben")
+        for exp in sorted(expenses, key=lambda x: x['date'], reverse=True):
+            col1, col2, col3 = st.columns([2, 2, 1])
+            with col1:
+                exp_date = datetime.strptime(exp['date'], "%Y-%m-%d").strftime("%d.%m.%Y")
+                st.write(f"**{exp_date}**")
+            with col2:
+                desc = exp.get('description', 'Keine Beschreibung')
+                st.write(desc)
+            with col3:
+                st.write(f"**{exp['amount']:.2f} €**")
+            st.markdown("---")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("Zurück zur Übersicht"):
+            st.session_state.editing_budget = None
+            st.rerun()
+    with col2:
+        if st.button("✏️ Budget bearbeiten"):
+            st.session_state.editing_budget = budget
+            render_budget_detail(budget, edit_mode=True)
+            st.rerun()
+    with col3:
+        if st.button("🗑️ Budget löschen", type="primary"):
+            response = requests.delete(f"{BACKEND_URL}/budgets/{budget['id']}")
+            if response.status_code == 200:
+                st.success("✅ Budget gelöscht!")
+                st.session_state.editing_budget = None
+                st.rerun()
+            else:
+                st.error(f"❌ Fehler: {response.text}")
+
+def render_budget_overview():
+    st.header("💰 Budget-Übersicht")
+    
+    if st.session_state.editing_budget:
+        render_budget_detail(st.session_state.editing_budget)
+        return
+    
+    response = requests.get(f"{BACKEND_URL}/budgets/")
+    if response.status_code == 200:
+        budgets = response.json()
+        if not budgets:
+            st.info("Keine Budgets vorhanden.")
+        else:
+            for budget in budgets:
+                expenses = budget.get('expenses', [])
+                total_spent = sum(exp['amount'] for exp in expenses)
+                remaining = budget['initial_amount'] - total_spent
+                
+                col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 1, 1])
+                with col1:
+                    contract_info = f" ({budget['contract_number']})" if budget.get('contract_number') else ""
+                    st.write(f"**Budget{contract_info}**")
+                with col2:
+                    start = datetime.strptime(budget['start_date'], "%Y-%m-%d").strftime("%d.%m.%Y")
+                    end = datetime.strptime(budget['end_date'], "%Y-%m-%d").strftime("%d.%m.%Y")
+                    st.write(f"{start} - {end}")
+                with col3:
+                    st.write(f"Verfügbar: **{remaining:.2f} €** / {budget['initial_amount']:.2f} €")
+                with col4:
+                    if st.button("📊 Details", key=f"budget_{budget['id']}"):
+                        st.session_state.editing_budget = budget
+                        st.rerun()
+                with col5:
+                    if st.button("🗑️ Löschen", key=f"delete_budget_{budget['id']}", type="secondary"):
+                        response = requests.delete(f"{BACKEND_URL}/budgets/{budget['id']}")
+                        if response.status_code == 200:
+                            st.success("✅ Budget gelöscht!")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Fehler: {response.text}")
+                st.markdown("---")
+    else:
+        st.error("Fehler beim Laden der Budgets.")
+
 # Main Layout
 st.title("📄 Vertragsarchiv")
 
-page = st.sidebar.radio("Navigation", ["Übersicht", "Neuer Vertrag"])
+page = st.sidebar.radio("Navigation", ["Verträge - Übersicht", "Verträge - Neu", "Budgets - Übersicht", "Budgets - Neu"])
 
-if page == "Übersicht":
+if page == "Verträge - Übersicht":
+    if st.session_state.editing_budget:
+        st.session_state.editing_budget = None
     render_overview()
-else:
+elif page == "Verträge - Neu":
     # Wenn man auf "Neuer Vertrag" klickt, Editier-Modus verlassen
     if st.session_state.editing_contract:
         st.session_state.editing_contract = None
+    if st.session_state.editing_budget:
+        st.session_state.editing_budget = None
     render_create_contract()
+elif page == "Budgets - Übersicht":
+    if st.session_state.editing_contract:
+        st.session_state.editing_contract = None
+    render_budget_overview()
+elif page == "Budgets - Neu":
+    if st.session_state.editing_contract:
+        st.session_state.editing_contract = None
+    if st.session_state.editing_budget:
+        st.session_state.editing_budget = None
+    render_create_budget()

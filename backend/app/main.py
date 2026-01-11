@@ -1,9 +1,9 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from .models import Contract, Base
+from .models import Contract, Base, Budget, Expense
 from .database import engine, SessionLocal
-from .schemas import ContractCreate, ContractResponse
-from sqlalchemy.orm import Session
+from .schemas import ContractCreate, ContractResponse, BudgetCreate, BudgetResponse, ExpenseCreate, ExpenseResponse
+from sqlalchemy.orm import Session, joinedload
 import os
 import shutil
 from datetime import datetime
@@ -14,6 +14,7 @@ from fastapi import Form
 # Pydantic-Modell für die direkte Eingabe (ohne "contract"-Wrapper)
 class DirectContractCreate(BaseModel):
     partner: str
+    contract_number: str = None
     start_date: str
     end_date: str
     notice_period: str
@@ -50,6 +51,7 @@ def get_db():
 @app.post("/contracts/", response_model=ContractResponse)
 async def create_contract(
     # Daten direkt entgegenehmen (kein "contract"-Wrapper)
+    contract_number: str = Form(None),
     partner: str = Form(...),
     start_date: str = Form(...),
     end_date: str = Form(...),
@@ -69,6 +71,7 @@ async def create_contract(
 
     # Manuell ein ContractCreate-Objekt erstellen
     contract_data = ContractCreate(
+        contract_number=contract_number,
         partner=partner,
         start_date=parsed_start_date,
         end_date=parsed_end_date,
@@ -89,6 +92,7 @@ async def create_contract(
             shutil.copyfileobj(file.file, buffer)
 
     db_contract = Contract(
+        contract_number=contract_data.contract_number,
         partner=contract_data.partner,
         start_date=contract_data.start_date,
         end_date=contract_data.end_date,
@@ -117,6 +121,7 @@ async def get_contract(contract_id: int, db: Session = Depends(get_db)):
 @app.put("/contracts/{contract_id}", response_model=ContractResponse)
 async def update_contract(
     contract_id: int,
+    contract_number: str = Form(None),
     partner: str = Form(...),
     start_date: str = Form(...),
     end_date: str = Form(...),
@@ -138,6 +143,7 @@ async def update_contract(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
+    contract.contract_number = contract_number
     contract.partner = partner
     contract.start_date = parsed_start_date
     contract.end_date = parsed_end_date
@@ -160,3 +166,65 @@ async def update_contract(
     db.commit()
     db.refresh(contract)
     return contract
+
+@app.delete("/contracts/{contract_id}")
+async def delete_contract(contract_id: int, db: Session = Depends(get_db)):
+    contract = db.query(Contract).filter(Contract.id == contract_id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    db.delete(contract)
+    db.commit()
+    return {"message": "Contract deleted successfully"}
+
+@app.post("/budgets/", response_model=BudgetResponse)
+async def create_budget(budget: BudgetCreate, db: Session = Depends(get_db)):
+    db_budget = Budget(**budget.dict())
+    db.add(db_budget)
+    db.commit()
+    db.refresh(db_budget)
+    return db_budget
+
+@app.get("/budgets/", response_model=List[BudgetResponse])
+async def get_budgets(db: Session = Depends(get_db)):
+    return db.query(Budget).options(joinedload(Budget.expenses)).all()
+
+@app.get("/budgets/{budget_id}", response_model=BudgetResponse)
+async def get_budget(budget_id: int, db: Session = Depends(get_db)):
+    budget = db.query(Budget).options(joinedload(Budget.expenses)).filter(Budget.id == budget_id).first()
+    if not budget:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    return budget
+
+@app.put("/budgets/{budget_id}", response_model=BudgetResponse)
+async def update_budget(budget_id: int, budget: BudgetCreate, db: Session = Depends(get_db)):
+    db_budget = db.query(Budget).filter(Budget.id == budget_id).first()
+    if not db_budget:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    
+    db_budget.contract_number = budget.contract_number
+    db_budget.initial_amount = budget.initial_amount
+    db_budget.start_date = budget.start_date
+    db_budget.end_date = budget.end_date
+    
+    db.commit()
+    db.refresh(db_budget)
+    return db_budget
+
+@app.delete("/budgets/{budget_id}")
+async def delete_budget(budget_id: int, db: Session = Depends(get_db)):
+    budget = db.query(Budget).filter(Budget.id == budget_id).first()
+    if not budget:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    # Lösche zuerst alle zugehörigen Ausgaben
+    db.query(Expense).filter(Expense.budget_id == budget_id).delete()
+    db.delete(budget)
+    db.commit()
+    return {"message": "Budget deleted successfully"}
+
+@app.post("/expenses/", response_model=ExpenseResponse)
+async def create_expense(expense: ExpenseCreate, db: Session = Depends(get_db)):
+    db_expense = Expense(**expense.dict())
+    db.add(db_expense)
+    db.commit()
+    db.refresh(db_expense)
+    return db_expense
