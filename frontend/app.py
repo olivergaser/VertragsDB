@@ -4,6 +4,7 @@ from datetime import datetime
 import os
 import time
 from requests.exceptions import ConnectionError
+from loguru import logger
 
 # Backend-URL aus Umgebungsvariable (wird von Docker gesetzt)
 BACKEND_URL = os.getenv("BACKEND_URL", "http://0.0.0.0:8000")
@@ -16,10 +17,10 @@ def wait_for_backend():
         try:
             response = requests.get(f"{BACKEND_URL}/health")
             if response.status_code == 200:
-                print("Backend ist bereit!")
+                logger.info("Backend ist bereit!")
                 return True
         except ConnectionError:
-            print("Warte auf Backend...")
+            logger.info("Warte auf Backend...")
             time.sleep(retry_interval)
     return False
 
@@ -43,7 +44,7 @@ def render_create_contract():
         amount = st.number_input("Betrag (€)", min_value=0.0, value=0.0)
         category = st.selectbox(
             "Kategorie",
-            ["Miete", "Versicherung", "Dienstleistung", "Kaufvertrag", "Sonstiges"]
+            ["Abonnement", "Dienstleistung", "Kaufvertrag", "Sonstiges"]
         )
         notes = st.text_area("Notizen", placeholder="Zusätzliche Informationen...")
         document = st.file_uploader(
@@ -95,7 +96,7 @@ def render_edit_contract(contract):
         amount = st.number_input("Betrag (€)", min_value=0.0, value=float(contract['amount']))
         
         # Kategorie Index finden
-        categories = ["Miete", "Versicherung", "Dienstleistung", "Kaufvertrag", "Sonstiges"]
+        categories = ["Abonnement", "Dienstleistung", "Kaufvertrag", "Sonstiges"]
         cat_index = 0
         if contract['category'] in categories:
             cat_index = categories.index(contract['category'])
