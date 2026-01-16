@@ -473,10 +473,74 @@ def render_budget_overview():
     else:
         st.error("Fehler beim Laden der Budgets.")
 
+def render_create_invoice():
+    st.header("➕ Neue Rechnung erfassen")
+    with st.form("new_invoice"):
+        invoice_number = st.text_input("Rechnungsnummer", placeholder="z. B. 'R-2026-001'")
+        invoice_date = st.date_input("Rechnungsdatum", datetime.now().date(), format="DD.MM.YYYY")
+        contract_number = st.text_input("Vertragsnummer (optional)", placeholder="z. B. 'V-2026-001'")
+        cost_center = st.text_input("Kostenstelle", placeholder="z. B. 'KST-100'")
+        amount_net = st.number_input("Summe Netto (€)", min_value=0.0, value=0.0, step=10.0)
+        
+        # Vorschau Brutto (nur visuell, Berechnung erfolgt im Backend auch nochmal zur Sicherheit)
+        st.write(f"Voraussichtliche Summe Brutto (19%): **{amount_net * 1.19:.2f} €**")
+
+        submitted = st.form_submit_button("Rechnung speichern")
+        if submitted:
+            if not invoice_number or not invoice_date or not cost_center:
+                st.error("Bitte fülle alle Pflichtfelder aus!")
+            else:
+                data = {
+                    "invoice_number": invoice_number,
+                    "invoice_date": invoice_date.strftime("%Y-%m-%d"),
+                    "contract_number": contract_number if contract_number else None,
+                    "cost_center": cost_center,
+                    "amount_net": amount_net
+                }
+                response = requests.post(f"{BACKEND_URL}/invoices/", json=data)
+                if response.status_code == 200:
+                    st.success("✅ Rechnung erfolgreich gespeichert!")
+                else:
+                    st.error(f"❌ Fehler: {response.text}")
+
+def render_invoice_overview():
+    st.header("🧾 Rechnungsübersicht")
+    
+    response = requests.get(f"{BACKEND_URL}/invoices/")
+    if response.status_code == 200:
+        invoices = response.json()
+        if not invoices:
+            st.info("Keine Rechnungen vorhanden.")
+        else:
+            for invoice in invoices:
+                col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 1])
+                with col1:
+                    st.write(f"**{invoice['invoice_number']}**")
+                    if invoice.get('contract_number'):
+                        st.caption(f"Ref: {invoice['contract_number']}")
+                with col2:
+                    st.write(datetime.strptime(invoice['invoice_date'], "%Y-%m-%d").strftime("%d.%m.%Y"))
+                with col3:
+                   st.write(invoice['cost_center'])
+                with col4:
+                    st.write(f"{invoice['amount_net']:.2f} € Netto")
+                    st.write(f"**{invoice['amount_gross']:.2f} € Brutto**")
+                with col5:
+                    if st.button("🗑️", key=f"delete_inv_{invoice['id']}", type="secondary", help="Löschen"):
+                        response = requests.delete(f"{BACKEND_URL}/invoices/{invoice['id']}")
+                        if response.status_code == 200:
+                            st.success("Gelöscht!")
+                            st.rerun()
+                        else:
+                            st.error(f"Fehler: {response.text}")
+                st.markdown("---")
+    else:
+        st.error("Fehler beim Laden der Rechnungen.")
+
 # Main Layout
 st.title("📄 Vertragsarchiv")
 
-page = st.sidebar.radio("Navigataboion", ["Verträge - Übersicht", "Verträge - Neu", "Budgets - Übersicht", "Budgets - Neu"])
+page = st.sidebar.radio("Navigation", ["Verträge - Übersicht", "Verträge - Neu", "Budgets - Übersicht", "Budgets - Neu", "Rechnungen - Übersicht", "Rechnungen - Neu"])
 
 if page == "Verträge - Übersicht":
     if st.session_state.editing_budget:
@@ -499,3 +563,7 @@ elif page == "Budgets - Neu":
     if st.session_state.editing_budget:
         st.session_state.editing_budget = None
     render_create_budget()
+elif page == "Rechnungen - Übersicht":
+    render_invoice_overview()
+elif page == "Rechnungen - Neu":
+    render_create_invoice()

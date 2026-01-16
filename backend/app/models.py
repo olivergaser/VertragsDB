@@ -38,3 +38,15 @@ class Expense(Base):
     description = Column(String, nullable=True)
 
     budget = relationship("Budget", back_populates="expenses")
+
+class Invoice(Base):
+    __tablename__ = "invoices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_number = Column(String, index=True)
+    invoice_date = Column(Date)
+    contract_number = Column(String, nullable=True)
+    cost_center = Column(String)
+    amount_net = Column(Float)
+    amount_gross = Column(Float)
+

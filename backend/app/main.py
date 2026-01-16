@@ -1,9 +1,9 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from .models import Contract, Base, Budget, Expense
+from .models import Contract, Base, Budget, Expense, Invoice
 from .database import engine, SessionLocal
-from .schemas import ContractCreate, ContractResponse, BudgetCreate, BudgetResponse, ExpenseCreate, ExpenseResponse
+from .schemas import ContractCreate, ContractResponse, BudgetCreate, BudgetResponse, ExpenseCreate, ExpenseResponse, InvoiceCreate, InvoiceResponse
 from sqlalchemy.orm import Session, joinedload
 import os
 import shutil
@@ -246,3 +246,28 @@ async def create_expense(expense: ExpenseCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_expense)
     return db_expense
+
+@app.post("/invoices/", response_model=InvoiceResponse)
+async def create_invoice(invoice: InvoiceCreate, db: Session = Depends(get_db)):
+    amount_gross = invoice.amount_net * 1.19  # Calculate gross (19% VAT)
+    db_invoice = Invoice(
+        **invoice.dict(),
+        amount_gross=amount_gross
+    )
+    db.add(db_invoice)
+    db.commit()
+    db.refresh(db_invoice)
+    return db_invoice
+
+@app.get("/invoices/", response_model=List[InvoiceResponse])
+async def get_invoices(db: Session = Depends(get_db)):
+    return db.query(Invoice).all()
+
+@app.delete("/invoices/{invoice_id}")
+async def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    db.delete(invoice)
+    db.commit()
+    return {"message": "Invoice deleted successfully"}

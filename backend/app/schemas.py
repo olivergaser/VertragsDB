@@ -51,3 +51,19 @@ class BudgetResponse(BudgetBase):
     expenses: List[ExpenseResponse] = []
     class Config:
         orm_mode = True
+
+class InvoiceBase(BaseModel):
+    invoice_number: str
+    invoice_date: date
+    contract_number: Optional[str] = None
+    cost_center: str
+    amount_net: float
+
+class InvoiceCreate(InvoiceBase):
+    pass
+
+class InvoiceResponse(InvoiceBase):
+    id: int
+    amount_gross: float
+    class Config:
+        orm_mode = True
