@@ -39,16 +39,18 @@ def render_create_contract():
     with st.form("new_contract"):
         contract_number = st.text_input("Vertragsnummer", placeholder="z. B. 'V-2026-001'")
         partner = st.text_input("Vertragspartner", placeholder="z. B. 'Max Mustermann GmbH'")
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
-            start_date = st.date_input("Startdatum", datetime.now().date(), format="DD.MM.YYYY")
+            contract_date = st.date_input("Vertragsdatum", value=None, format="DD.MM.YYYY")
         with col2:
+            start_date = st.date_input("Startdatum", datetime.now().date(), format="DD.MM.YYYY")
+        with col3:
             end_date = st.date_input("Enddatum", datetime.now().date(), format="DD.MM.YYYY")
         notice_period = st.text_input("Kündigungsfrist", placeholder="z. B. '3 Monate'")
         amount = st.number_input("Betrag (€)", min_value=0.0, value=0.0)
         category = st.selectbox(
             "Kategorie",
-            ["Abonnement", "Dienstleistung", "Kaufvertrag", "Sonstiges"]
+            ["Abonnement", "Dienstleistung", "Kaufvertrag", "Wartungsvertrag", "Sonstiges"]
         )
         notes = st.text_area("Notizen", placeholder="Zusätzliche Informationen...")
         document = st.file_uploader(
@@ -65,6 +67,7 @@ def render_create_contract():
                 data = {
                     "contract_number": contract_number,
                     "partner": partner,
+                    "contract_date": contract_date.strftime("%Y-%m-%d") if contract_date else None,
                     "start_date": start_date.strftime("%Y-%m-%d"),
                     "end_date": end_date.strftime("%Y-%m-%d"),
                     "notice_period": notice_period,
@@ -89,20 +92,28 @@ def render_edit_contract(contract):
     except:
         start_date_val = datetime.now().date()
         end_date_val = datetime.now().date()
+    
+    try:
+        contract_date_val = datetime.strptime(contract['contract_date'], "%Y-%m-%d").date() if contract.get('contract_date') else None
+    except:
+        contract_date_val = None
 
     with st.form("edit_contract"):
         contract_number = st.text_input("Vertragsnummer", value=contract.get("contract_number", "") or "")
         partner = st.text_input("Vertragspartner", value=contract['partner'])
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
-            start_date = st.date_input("Startdatum", value=start_date_val, format="DD.MM.YYYY")
+            contract_date = st.date_input("Vertragsdatum", value=contract_date_val, format="DD.MM.YYYY")
         with col2:
+            start_date = st.date_input("Startdatum", value=start_date_val, format="DD.MM.YYYY")
+        with col3:
             end_date = st.date_input("Enddatum", value=end_date_val, format="DD.MM.YYYY")
         notice_period = st.text_input("Kündigungsfrist", value=contract['notice_period'])
         amount = st.number_input("Betrag (€)", min_value=0.0, value=float(contract['amount']))
         
         # Kategorie Index finden
-        categories = ["Abonnement", "Dienstleistung", "Kaufvertrag", "Sonstiges"]
+        categories = ["Abonnement", "Dienstleistung", "Kaufvertrag", "Wartungsvertrag", "Sonstiges"]
+
         cat_index = 0
         if contract['category'] in categories:
             cat_index = categories.index(contract['category'])
@@ -115,11 +126,32 @@ def render_edit_contract(contract):
             help="Max. 10MB"
         )
 
+        if contract.get("document_path"):
+            st.markdown("### 📄 Aktuelles Dokument")
+            # Extrahiere Dateinamen aus dem Pfad
+            file_name = os.path.basename(contract['document_path'])
+            
+            # Button zum Herunterladen (ruft Backend-Endpoint auf)
+            try:
+                doc_response = requests.get(f"{BACKEND_URL}/contracts/{contract['id']}/document")
+                if doc_response.status_code == 200:
+                    st.download_button(
+                        label=f"📥 Download {file_name}",
+                        data=doc_response.content,
+                        file_name=file_name,
+                        mime="application/pdf" if file_name.lower().endswith(".pdf") else "application/octet-stream"
+                    )
+                else:
+                    st.warning("⚠️ Dokument nicht gefunden (Dateisystem).")
+            except Exception as e:
+                st.error(f"Fehler beim Laden des Dokuments: {e}")
+
         submitted = st.form_submit_button("Änderungen speichern")
         if submitted:
             data = {
                 "contract_number": contract_number,
                 "partner": partner,
+                "contract_date": contract_date.strftime("%Y-%m-%d") if contract_date else None,
                 "start_date": start_date.strftime("%Y-%m-%d"),
                 "end_date": end_date.strftime("%Y-%m-%d"),
                 "notice_period": notice_period,
@@ -172,7 +204,8 @@ def render_overview():
                      # Datum formatieren
                     start = datetime.strptime(contract['start_date'], "%Y-%m-%d").strftime("%d.%m.%Y")
                     end = datetime.strptime(contract['end_date'], "%Y-%m-%d").strftime("%d.%m.%Y")
-                    st.write(f"{start} - {end}")
+                    c_date = datetime.strptime(contract['contract_date'], "%Y-%m-%d").strftime("%d.%m.%Y") if contract.get('contract_date') else "-"
+                    st.write(f"{start} - {end} (V: {c_date})")
                 with col3:
                     if st.button("✏️ Bearbeiten", key=f"edit_{contract['id']}"):
                         st.session_state.editing_contract = contract
@@ -441,7 +474,7 @@ def render_budget_overview():
 # Main Layout
 st.title("📄 Vertragsarchiv")
 
-page = st.sidebar.radio("Navigation", ["Verträge - Übersicht", "Verträge - Neu", "Budgets - Übersicht", "Budgets - Neu"])
+page = st.sidebar.radio("Navigataboion", ["Verträge - Übersicht", "Verträge - Neu", "Budgets - Übersicht", "Budgets - Neu"])
 
 if page == "Verträge - Übersicht":
     if st.session_state.editing_budget:

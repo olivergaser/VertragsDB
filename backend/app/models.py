@@ -8,6 +8,7 @@ class Contract(Base):
     id = Column(Integer, primary_key=True, index=True)
     contract_number = Column(String, index=True, nullable=True)
     partner = Column(String, index=True)
+    contract_date = Column(Date, nullable=True)
     start_date = Column(Date)
     end_date = Column(Date)
     notice_period = Column(String)

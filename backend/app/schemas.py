@@ -5,6 +5,7 @@ from typing import List, Optional
 class ContractBase(BaseModel):
     contract_number: Optional[str] = None
     partner: str
+    contract_date: Optional[date] = None
     start_date: date
     end_date: date
     notice_period: str

@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from .models import Contract, Base, Budget, Expense
 from .database import engine, SessionLocal
@@ -53,6 +54,7 @@ async def create_contract(
     # Daten direkt entgegenehmen (kein "contract"-Wrapper)
     contract_number: str = Form(None),
     partner: str = Form(...),
+    contract_date: str = Form(None),
     start_date: str = Form(...),
     end_date: str = Form(...),
     notice_period: str = Form(...),
@@ -64,6 +66,7 @@ async def create_contract(
 ):
     # Parse date strings to date objects
     try:
+        parsed_contract_date = datetime.strptime(contract_date, "%Y-%m-%d").date() if contract_date else None
         parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
         parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
     except ValueError:
@@ -73,6 +76,7 @@ async def create_contract(
     contract_data = ContractCreate(
         contract_number=contract_number,
         partner=partner,
+        contract_date=parsed_contract_date,
         start_date=parsed_start_date,
         end_date=parsed_end_date,
         notice_period=notice_period,
@@ -94,6 +98,7 @@ async def create_contract(
     db_contract = Contract(
         contract_number=contract_data.contract_number,
         partner=contract_data.partner,
+        contract_date=contract_data.contract_date,
         start_date=contract_data.start_date,
         end_date=contract_data.end_date,
         notice_period=contract_data.notice_period,
@@ -123,6 +128,7 @@ async def update_contract(
     contract_id: int,
     contract_number: str = Form(None),
     partner: str = Form(...),
+    contract_date: str = Form(None),
     start_date: str = Form(...),
     end_date: str = Form(...),
     notice_period: str = Form(...),
@@ -138,6 +144,7 @@ async def update_contract(
 
     # Parse date strings to date objects
     try:
+        parsed_contract_date = datetime.strptime(contract_date, "%Y-%m-%d").date() if contract_date else None
         parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
         parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
     except ValueError:
@@ -145,6 +152,7 @@ async def update_contract(
 
     contract.contract_number = contract_number
     contract.partner = partner
+    contract.contract_date = parsed_contract_date
     contract.start_date = parsed_start_date
     contract.end_date = parsed_end_date
     contract.notice_period = notice_period
@@ -175,6 +183,16 @@ async def delete_contract(contract_id: int, db: Session = Depends(get_db)):
     db.delete(contract)
     db.commit()
     return {"message": "Contract deleted successfully"}
+
+@app.get("/contracts/{contract_id}/document")
+async def get_contract_document(contract_id: int, db: Session = Depends(get_db)):
+    contract = db.query(Contract).filter(Contract.id == contract_id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    if not contract.document_path or not os.path.exists(contract.document_path):
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    return FileResponse(contract.document_path, filename=os.path.basename(contract.document_path))
 
 @app.post("/budgets/", response_model=BudgetResponse)
 async def create_budget(budget: BudgetCreate, db: Session = Depends(get_db)):
