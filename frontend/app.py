@@ -98,6 +98,26 @@ def render_edit_contract(contract):
     except:
         contract_date_val = None
 
+    if contract.get("document_path"):
+        st.markdown("### 📄 Aktuelles Dokument")
+        # Extrahiere Dateinamen aus dem Pfad
+        file_name = os.path.basename(contract['document_path'])
+        
+        # Button zum Herunterladen (ruft Backend-Endpoint auf)
+        try:
+            doc_response = requests.get(f"{BACKEND_URL}/contracts/{contract['id']}/document")
+            if doc_response.status_code == 200:
+                st.download_button(
+                    label=f"📥 Download {file_name}",
+                    data=doc_response.content,
+                    file_name=file_name,
+                    mime="application/pdf" if file_name.lower().endswith(".pdf") else "application/octet-stream"
+                )
+            else:
+                st.warning("⚠️ Dokument nicht gefunden (Dateisystem).")
+        except Exception as e:
+            st.error(f"Fehler beim Laden des Dokuments: {e}")
+
     with st.form("edit_contract"):
         contract_number = st.text_input("Vertragsnummer", value=contract.get("contract_number", "") or "")
         partner = st.text_input("Vertragspartner", value=contract['partner'])
@@ -126,25 +146,7 @@ def render_edit_contract(contract):
             help="Max. 10MB"
         )
 
-        if contract.get("document_path"):
-            st.markdown("### 📄 Aktuelles Dokument")
-            # Extrahiere Dateinamen aus dem Pfad
-            file_name = os.path.basename(contract['document_path'])
-            
-            # Button zum Herunterladen (ruft Backend-Endpoint auf)
-            try:
-                doc_response = requests.get(f"{BACKEND_URL}/contracts/{contract['id']}/document")
-                if doc_response.status_code == 200:
-                    st.download_button(
-                        label=f"📥 Download {file_name}",
-                        data=doc_response.content,
-                        file_name=file_name,
-                        mime="application/pdf" if file_name.lower().endswith(".pdf") else "application/octet-stream"
-                    )
-                else:
-                    st.warning("⚠️ Dokument nicht gefunden (Dateisystem).")
-            except Exception as e:
-                st.error(f"Fehler beim Laden des Dokuments: {e}")
+
 
         submitted = st.form_submit_button("Änderungen speichern")
         if submitted:
